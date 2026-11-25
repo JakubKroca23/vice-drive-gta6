@@ -5,6 +5,7 @@ import { createOceanSystem } from './ocean';
 import { buildViceCity } from './city';
 import { createPhysicsWorld, type StuntRampDef } from './physics';
 import { createVehicleSystem } from './vehicle';
+import { createPedestrianSystem } from './pedestrians';
 import { createPostProcessing } from './postprocessing';
 import { ViceAudioEngine } from './audio';
 import { createUISystem } from './ui';
@@ -60,6 +61,7 @@ async function bootstrap() {
   setProgress(82);
 
   const vehicle = createVehicleSystem(scene, physics.world, isMobile);
+  const pedestrians = createPedestrianSystem(scene);
   const post = createPostProcessing(renderer, scene, camera, isMobile);
   const audio = new ViceAudioEngine();
 
@@ -177,6 +179,7 @@ async function bootstrap() {
     const elapsed = clock.getElapsedTime();
 
     vehicle.update(dt, input, onSplash);
+    pedestrians.update(dt, vehicle.carGroup.position, vehicle.speedKmh / 3.6);
     physics.step(dt, onSplash);
     audio.updateVehicle(vehicle.speedKmh / 3.6, input.throttle, input.boost, vehicle.drifting, !vehicle.onFoot);
 

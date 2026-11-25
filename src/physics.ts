@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import type { StaticBoxDef } from './city';
+import { createTrafficCarModel } from './models';
 import { getGroundHeight } from './ocean';
 import type { DynamicProp, TrafficCarData } from './types';
 
@@ -163,54 +164,24 @@ export async function createPhysicsWorld(
   }
   spawnProps();
 
-  // 5) Autonomous Cruising Traffic Cars along Ocean Drive
+  // 5) Autonomous Cruising Traffic Cars along Ocean Drive (Sculpted Models)
   const trafficCars: TrafficCarData[] = [];
-  const trafficSpecs: Array<{ laneX: number; dirZ: 1 | -1; z: number; color: number; speed: number }> = [
-    { laneX: -5.2, dirZ: 1, z: -70, color: 0xffe066, speed: 13.5 },
-    { laneX: 5.2, dirZ: -1, z: 45, color: 0x38d9a9, speed: 15.0 },
-    { laneX: 9.8, dirZ: -1, z: -40, color: 0xf06595, speed: 12.0 }
+  const trafficSpecs: Array<{
+    laneX: number;
+    dirZ: 1 | -1;
+    z: number;
+    color: number;
+    speed: number;
+    style: 'coupe' | 'suv' | 'convertible';
+  }> = [
+    { laneX: -5.2, dirZ: 1, z: -70, color: 0xffd43b, speed: 13.5, style: 'convertible' },
+    { laneX: 5.2, dirZ: -1, z: 45, color: 0x20c997, speed: 15.0, style: 'coupe' },
+    { laneX: 9.8, dirZ: -1, z: -40, color: 0x4dabf7, speed: 12.0, style: 'suv' }
   ];
 
   trafficSpecs.forEach((tc) => {
-    const grp = new THREE.Group();
-    const bodyMat = new THREE.MeshPhysicalMaterial({
-      color: tc.color,
-      metalness: 0.65,
-      roughness: 0.18,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.08
-    });
-    const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.72, 4.3), bodyMat);
-    chassis.position.y = 0.56;
-    chassis.castShadow = true;
-    grp.add(chassis);
-
-    const cabin = new THREE.Mesh(
-      new THREE.BoxGeometry(1.65, 0.58, 2.2),
-      new THREE.MeshPhysicalMaterial({ color: 0x101824, roughness: 0.06, metalness: 0.2, clearcoat: 1 })
-    );
-    cabin.position.set(0, 1.15, -0.15);
-    grp.add(cabin);
-
-    // Headlights & Taillights
-    const hlMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2cc, emissiveIntensity: 3.0 });
-    const tlMat = new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0xff1111, emissiveIntensity: 2.5 });
-    const hl = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.12, 0.1), hlMat);
-    hl.position.set(0, 0.58, 2.15 * tc.dirZ);
-    const tl = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.12, 0.1), tlMat);
-    tl.position.set(0, 0.58, -2.15 * tc.dirZ);
-    grp.add(hl, tl);
-
-    const wGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 14);
-    wGeo.rotateZ(Math.PI / 2);
-    const wMat = new THREE.MeshStandardMaterial({ color: 0x181b20, roughness: 0.6 });
-    [[-0.95, 0.36, 1.35], [0.95, 0.36, 1.35], [-0.95, 0.36, -1.35], [0.95, 0.36, -1.35]].forEach(([wx, wy, wz]) => {
-      const wm = new THREE.Mesh(wGeo, wMat);
-      wm.position.set(wx, wy, wz);
-      grp.add(wm);
-    });
-
-    grp.position.set(tc.laneX, 0.12, tc.z);
+    const grp = createTrafficCarModel(tc.color, tc.style, tc.dirZ);
+    grp.position.set(tc.laneX, 0.10, tc.z);
     scene.add(grp);
 
     const rb = world.createRigidBody(

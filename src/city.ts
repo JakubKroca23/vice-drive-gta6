@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createSandPBR, createSkyscraperFacadePBR, createWetAsphaltPBR } from './textures';
+import {
+  createArtDecoFacadePBR,
+  createPalmBarkPBR,
+  createSandPBR,
+  createSkyscraperFacadePBR,
+  createWetAsphaltPBR
+} from './textures';
+import { createCurvedPalmGeometries } from './models';
 import { getGroundHeight } from './ocean';
 
 export interface StaticBoxDef {
@@ -185,7 +192,6 @@ export function buildViceCity(scene: THREE.Scene): CityBuildResult {
     metalness: 0.65
   });
 
-  const pastelColors = [0xf4e4d7, 0xf8c8dc, 0xb8f0e4, 0xffe2b0, 0xd7e3fc];
   const neonPalette = [0xff2a9d, 0x00f2ff, 0xffaa2b, 0x8d5cff];
 
   neonPalette.forEach((hex) => {
@@ -203,7 +209,25 @@ export function buildViceCity(scene: THREE.Scene): CityBuildResult {
   const tallGeos: THREE.BufferGeometry[] = [];
   const neonGeosByIdx: THREE.BufferGeometry[][] = neonPalette.map(() => []);
 
-  // Art Deco Hotels lining Ocean Drive (West side x = -25)
+  const decoTex = createArtDecoFacadePBR(512);
+  decoTex.map.repeat.set(2, 2);
+  decoTex.roughnessMap.repeat.set(2, 2);
+  decoTex.normalMap.repeat.set(2, 2);
+  if (decoTex.emissiveMap) decoTex.emissiveMap.repeat.set(2, 2);
+
+  const decoMat = new THREE.MeshStandardMaterial({
+    map: decoTex.map,
+    roughnessMap: decoTex.roughnessMap,
+    normalMap: decoTex.normalMap,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    emissiveMap: decoTex.emissiveMap,
+    emissive: new THREE.Color(0xffdfa8),
+    emissiveIntensity: 1.15,
+    roughness: 0.72,
+    metalness: 0.12
+  });
+
+  // Art Deco Hotels lining Ocean Drive (West side x = -25) with balconies & pilasters
   const hotelZ = [-128, -96, -64, -30, 28, 60, 94, 128];
   hotelZ.forEach((hz, idx) => {
     const w = 13 + (idx % 3) * 2;
@@ -212,28 +236,28 @@ export function buildViceCity(scene: THREE.Scene): CityBuildResult {
     const bx = -20 - w * 0.5;
     addMergedBox(decoGeos, w, h, d, bx, h * 0.5, hz);
 
-    // Art Deco stepped parapet crown
-    addMergedBox(decoGeos, w * 0.72, 2.6, d * 0.65, bx, h + 1.3, hz, false);
+    // Art Deco stepped parapet crown + vertical center fin
+    addMergedBox(decoGeos, w * 0.72, 2.8, d * 0.65, bx, h + 1.4, hz, false);
+    addMergedBox(decoGeos, 0.6, h * 0.85, 1.2, bx + w * 0.5 + 0.25, h * 0.45, hz, false);
+
+    // Balcony ledges on 2nd & 3rd floors
+    addMergedBox(decoGeos, 1.4, 0.24, d * 0.78, bx + w * 0.5 + 0.65, 6.2, hz, false);
+    if (h > 13) addMergedBox(decoGeos, 1.4, 0.24, d * 0.78, bx + w * 0.5 + 0.65, 9.6, hz, false);
 
     // Glowing HDR Neon Sign bands on hotel facade facing Ocean Drive!
     const nIdx = idx % neonMaterials.length;
-    const strip1 = new THREE.BoxGeometry(0.28, 0.32, d * 0.88);
-    strip1.translate(bx + w * 0.5 + 0.14, h - 0.6, hz);
+    const strip1 = new THREE.BoxGeometry(0.28, 0.34, d * 0.88);
+    strip1.translate(bx + w * 0.5 + 0.14, h - 0.5, hz);
     neonGeosByIdx[nIdx].push(strip1);
 
-    const strip2 = new THREE.BoxGeometry(0.28, 3.8, 0.45);
-    strip2.translate(bx + w * 0.5 + 0.14, h * 0.62, hz);
+    const strip2 = new THREE.BoxGeometry(0.28, 4.2, 0.42);
+    strip2.translate(bx + w * 0.5 + 0.58, h * 0.58, hz);
     neonGeosByIdx[(nIdx + 1) % neonMaterials.length].push(strip2);
 
-    // Ground floor awning
-    addMergedBox(decoGeos, 2.4, 0.28, d * 0.85, bx + w * 0.5 + 1.1, 3.4, hz, false);
+    // Ground floor café awning
+    addMergedBox(decoGeos, 2.8, 0.22, d * 0.86, bx + w * 0.5 + 1.35, 3.3, hz, false);
   });
 
-  const decoMat = new THREE.MeshStandardMaterial({
-    color: pastelColors[0],
-    roughness: 0.72,
-    metalness: 0.08
-  });
   const decoMesh = new THREE.Mesh(mergeGeometries(decoGeos, false), decoMat);
   decoMesh.castShadow = true;
   decoMesh.receiveShadow = true;
@@ -266,7 +290,7 @@ export function buildViceCity(scene: THREE.Scene): CityBuildResult {
     }
   });
 
-  // 4) Instanced Palm Trees (110 palms -> 2 draw calls!)
+  // 4) Instanced Sculpted Curved Palm Trees + Tropical Shrubs
   const palmPositions: Array<[number, number, number]> = [];
   for (let z = -140; z <= 140; z += 14) {
     if (Math.abs(z) < 12) continue; // keep cross street clear
@@ -276,48 +300,94 @@ export function buildViceCity(scene: THREE.Scene): CityBuildResult {
       palmPositions.push([22.5, getGroundHeight(22.5, z), z - 3]);
     }
   }
-  // Island palms
   [[-16, -16], [16, -16], [-16, 16], [16, 16]].forEach(([ox, oz]) => {
     palmPositions.push([128 + ox, 0.25, oz]);
   });
 
-  const trunkGeo = new THREE.CylinderGeometry(0.14, 0.26, 7.2, 7);
-  trunkGeo.translate(0, 3.6, 0);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6a523e, roughness: 0.92 });
+  const barkTex = createPalmBarkPBR(256);
+  const { trunkGeo, crownGeo } = createCurvedPalmGeometries();
+  const trunkMat = new THREE.MeshStandardMaterial({
+    map: barkTex.map,
+    normalMap: barkTex.normalMap,
+    roughnessMap: barkTex.roughnessMap,
+    roughness: 0.92
+  });
   const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, palmPositions.length);
   trunkInst.castShadow = true;
 
-  // Radial star-shaped palm frond canopy merged into 1 geometry
-  const frondGeos: THREE.BufferGeometry[] = [];
-  for (let f = 0; f < 7; f++) {
-    const ang = (f / 7) * Math.PI * 2;
-    const fg = new THREE.BoxGeometry(0.65, 0.08, 3.4);
-    fg.translate(0, 0, 1.7);
-    fg.rotateX(0.32);
-    fg.rotateY(ang);
-    frondGeos.push(fg);
-  }
-  const canopyGeo = mergeGeometries(frondGeos, false);
-  const canopyMat = new THREE.MeshStandardMaterial({ color: 0x266a2e, roughness: 0.72, side: THREE.DoubleSide });
-  const canopyInst = new THREE.InstancedMesh(canopyGeo, canopyMat, palmPositions.length);
+  const canopyMat = new THREE.MeshStandardMaterial({
+    color: 0x2a7834,
+    roughness: 0.65,
+    side: THREE.DoubleSide
+  });
+  const canopyInst = new THREE.InstancedMesh(crownGeo, canopyMat, palmPositions.length);
   canopyInst.castShadow = true;
 
   const dummy = new THREE.Object3D();
   palmPositions.forEach(([px, py, pz], i) => {
-    const lean = ((i % 5) - 2) * 0.04;
-    const sc = 0.85 + (i % 4) * 0.12;
+    const yaw = (i * 2.39996) % (Math.PI * 2);
+    const sc = 0.85 + (i % 4) * 0.11;
     dummy.position.set(px, py, pz);
-    dummy.rotation.set(lean, i * 1.1, lean * 0.7);
+    dummy.rotation.set(0, yaw, 0);
     dummy.scale.set(sc, sc, sc);
     dummy.updateMatrix();
     trunkInst.setMatrixAt(i, dummy.matrix);
-
-    dummy.position.set(px - Math.sin(lean * 0.7) * 0.4, py + 7.1 * sc, pz + Math.sin(lean) * 0.4);
-    dummy.updateMatrix();
     canopyInst.setMatrixAt(i, dummy.matrix);
   });
   scene.add(trunkInst);
   scene.add(canopyInst);
+
+  // Pedestrian Crosswalks & Tropical Coastal Shrubs
+  const cwGeos: THREE.BufferGeometry[] = [];
+  [-12.5, 12.5].forEach((cz) => {
+    for (let sx = -12; sx <= 12; sx += 2.2) {
+      const stripe = new THREE.BoxGeometry(0.95, 0.02, 3.2);
+      stripe.translate(sx, 0.095, cz);
+      cwGeos.push(stripe);
+    }
+  });
+  const cwMesh = new THREE.Mesh(
+    mergeGeometries(cwGeos, false),
+    new THREE.MeshStandardMaterial({ color: 0xeef3f8, roughness: 0.75 })
+  );
+  scene.add(cwMesh);
+
+  const shrubGeo = new THREE.DodecahedronGeometry(0.65, 1);
+  const shrubMat = new THREE.MeshStandardMaterial({ color: 0x1e6029, roughness: 0.8 });
+  const shrubInst = new THREE.InstancedMesh(shrubGeo, shrubMat, 36);
+  for (let i = 0; i < 36; i++) {
+    const sz = -132 + i * 7.5;
+    if (Math.abs(sz) < 12) {
+      dummy.position.set(0, -50, 0);
+    } else {
+      dummy.position.set(i % 2 === 0 ? 15.6 : -14.8, 0.35, sz);
+      dummy.scale.set(1.1, 0.65, 1.1);
+      dummy.rotation.set(0, i * 0.8, 0);
+    }
+    dummy.updateMatrix();
+    shrubInst.setMatrixAt(i, dummy.matrix);
+  }
+  scene.add(shrubInst);
+
+  // Beach Lifeguard Tower (x = 29, z = 20)
+  const lgY = getGroundHeight(29, 20);
+  const lgGeos: THREE.BufferGeometry[] = [];
+  const addLG = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    g.translate(29 + x, lgY + y, 20 + z);
+    lgGeos.push(g);
+  };
+  [[-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1]].forEach(([lx, lz]) => addLG(0.18, 2.4, 0.18, lx, 1.1, lz));
+  addLG(2.8, 0.2, 2.8, 0, 2.2, 0);
+  addLG(2.4, 1.6, 2.4, 0, 3.1, 0);
+  addLG(3.2, 0.22, 3.2, 0, 4.05, 0);
+  const lgMesh = new THREE.Mesh(
+    mergeGeometries(lgGeos, false),
+    new THREE.MeshStandardMaterial({ color: 0x45c4d6, roughness: 0.65 })
+  );
+  lgMesh.castShadow = true;
+  scene.add(lgMesh);
+  staticBoxes.push({ w: 2.8, h: 4.0, d: 2.8, x: 29, y: lgY + 2.0, z: 20 });
 
   // 5) Instanced Streetlights along Ocean Drive & Bridge
   const lampPositions: Array<[number, number, number, number]> = [];

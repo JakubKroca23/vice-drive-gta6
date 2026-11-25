@@ -1,5 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
+import { createCarbonFiberPBR } from './textures';
+import { animateHumanWalk, createArticulatedHumanRig, createDetailedSupercarModel } from './models';
 import type { InputState } from './types';
 import { getGroundHeight } from './ocean';
 
@@ -29,144 +31,18 @@ export function createVehicleSystem(
   world: RAPIER.World,
   isMobile: boolean
 ): VehicleSystem {
-  // 1) Sculpted Vice Supercar Mesh
-  const carGroup = new THREE.Group();
+  // 1) Sculpted Vice Supercar Mesh (Beveled Extrusion + Carbon Aero + Alloy Rims)
+  const carbonTex = createCarbonFiberPBR(128);
+  const {
+    group: carGroup,
+    tailMat,
+    underglowStrip: underStrip,
+    underglowLight: underLight,
+    flames,
+    wheels: wheelMeshes
+  } = createDetailedSupercarModel(carbonTex, isMobile);
   scene.add(carGroup);
-
-  const paintMat = new THREE.MeshPhysicalMaterial({
-    color: 0xff1e7a, // Iconic Vice Candy Magenta
-    metalness: 0.72,
-    roughness: 0.16,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.04
-  });
-
-  const carbonMat = new THREE.MeshStandardMaterial({
-    color: 0x16191f,
-    roughness: 0.35,
-    metalness: 0.55
-  });
-
-  const glassMat = new THREE.MeshPhysicalMaterial({
-    color: 0x0e1824,
-    roughness: 0.04,
-    metalness: 0.15,
-    clearcoat: 1.0,
-    transparent: true,
-    opacity: 0.88
-  });
-
-  // Lower body shell
-  const mainBody = new THREE.Mesh(new THREE.BoxGeometry(2.04, 0.56, 4.55), paintMat);
-  mainBody.position.set(0, 0.06, 0);
-  mainBody.castShadow = true;
-  mainBody.receiveShadow = true;
-  carGroup.add(mainBody);
-
-  // Sloped hood & rear deck
-  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.24, 1.55), paintMat);
-  hood.position.set(0, 0.30, 1.32);
-  hood.rotation.x = 0.09;
-  hood.castShadow = true;
-  carGroup.add(hood);
-
-  // Aerodynamic glass cabin
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.52, 2.05), glassMat);
-  cabin.position.set(0, 0.54, -0.15);
-  cabin.castShadow = true;
-  carGroup.add(cabin);
-
-  // Carbon front splitter & side skirts
-  const splitter = new THREE.Mesh(new THREE.BoxGeometry(2.12, 0.10, 4.72), carbonMat);
-  splitter.position.set(0, -0.22, 0.05);
-  carGroup.add(splitter);
-
-  // Rear GT Wing Spoiler
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.08, 0.08, 0.38), carbonMat);
-  wing.position.set(0, 0.68, -2.12);
-  wing.rotation.x = -0.08;
-  wing.castShadow = true;
-  carGroup.add(wing);
-  [-0.65, 0.65].forEach((sx) => {
-    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.38, 0.2), carbonMat);
-    strut.position.set(sx, 0.48, -2.06);
-    carGroup.add(strut);
-  });
-
-  // Headlights (HDR emissive + real SpotLight beam on desktop)
-  const headMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    emissive: 0xdff6ff,
-    emissiveIntensity: 3.5
-  });
-  [-0.72, 0.72].forEach((hx) => {
-    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.11, 0.12), headMat);
-    hl.position.set(hx, 0.14, 2.26);
-    carGroup.add(hl);
-  });
-
-  const headlightSpot = new THREE.SpotLight(0xeef8ff, isMobile ? 0 : 18, 46, Math.PI * 0.24, 0.48, 1.4);
-  headlightSpot.position.set(0, 0.35, 2.25);
-  const spotTarget = new THREE.Object3D();
-  spotTarget.position.set(0, -0.6, 20);
-  carGroup.add(headlightSpot, spotTarget);
-  headlightSpot.target = spotTarget;
-
-  // Taillights (brighten on brake)
-  const tailMat = new THREE.MeshStandardMaterial({
-    color: 0xff1133,
-    emissive: 0xff1133,
-    emissiveIntensity: 2.2
-  });
-  const tailBar = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.12, 0.1), tailMat);
-  tailBar.position.set(0, 0.2, -2.28);
-  carGroup.add(tailBar);
-
-  // Neon Underglow Strip + Light
-  const underglowMat = new THREE.MeshStandardMaterial({
-    color: 0x00f2ff,
-    emissive: 0x00f2ff,
-    emissiveIntensity: 3.0
-  });
-  const underStrip = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.04, 3.8), underglowMat);
-  underStrip.position.set(0, -0.26, 0);
-  carGroup.add(underStrip);
-  const underLight = new THREE.PointLight(0x00f2ff, 4.5, 9, 1.8);
-  underLight.position.set(0, -0.35, 0);
-  carGroup.add(underLight);
   let underglowOn = true;
-
-  // Twin Nitro Exhaust Flames
-  const flameMat = new THREE.MeshBasicMaterial({ color: 0x38f2ff, transparent: true, opacity: 0.9 });
-  const flames: THREE.Mesh[] = [];
-  [-0.55, 0.55].forEach((ex) => {
-    const fg = new THREE.ConeGeometry(0.11, 0.75, 10);
-    fg.rotateX(-Math.PI / 2);
-    const fm = new THREE.Mesh(fg, flameMat);
-    fm.position.set(ex, -0.1, -2.55);
-    fm.visible = false;
-    carGroup.add(fm);
-    flames.push(fm);
-  });
-
-  // 4 Wheel Meshes
-  const wheelMeshes: THREE.Group[] = [];
-  const tireMat = new THREE.MeshStandardMaterial({ color: 0x181b20, roughness: 0.72 });
-  const rimMat = new THREE.MeshStandardMaterial({ color: 0xe6ecf5, metalness: 0.92, roughness: 0.18 });
-  const tireGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.28, 20);
-  tireGeo.rotateZ(Math.PI / 2);
-  const rimGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.30, 12);
-  rimGeo.rotateZ(Math.PI / 2);
-
-  for (let i = 0; i < 4; i++) {
-    const wg = new THREE.Group();
-    const tire = new THREE.Mesh(tireGeo, tireMat);
-    tire.castShadow = true;
-    const rim = new THREE.Mesh(rimGeo, rimMat);
-    wg.add(tire, rim);
-    carGroup.add(wg);
-    wheelMeshes.push(wg);
-  }
 
   // 2) Rapier3D RigidBody & DynamicRayCastVehicleController
   const startPos = { x: 0, y: 0.75, z: 42 };
@@ -217,23 +93,12 @@ export function createVehicleSystem(
     controller.setWheelSideFrictionStiffness(idx, wc.front ? 2.4 : 2.1);
   });
 
-  // 3) On-Foot Character Mesh (stylized Vice runner)
-  const playerGroup = new THREE.Group();
-  const torso = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.28, 0.72, 6, 12),
-    new THREE.MeshStandardMaterial({ color: 0x00d9ff, roughness: 0.5 })
-  );
-  torso.position.y = 0.85;
-  torso.castShadow = true;
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.21, 12, 10),
-    new THREE.MeshStandardMaterial({ color: 0xf1c29b, roughness: 0.6 })
-  );
-  head.position.y = 1.62;
-  head.castShadow = true;
-  playerGroup.add(torso, head);
+  // 3) Articulated 3D Player Rig (with shades & walking animation)
+  const playerRig = createArticulatedHumanRig(0x00d9ff, 0x1e293b, 0xf1c29b, 0x231915);
+  const playerGroup = playerRig.root;
   playerGroup.visible = false;
   scene.add(playerGroup);
+  let walkPhase = 0;
 
   let onFoot = false;
   let playerHeading = 0;
@@ -395,6 +260,10 @@ export function createVehicleSystem(
           playerGroup.position.x += nx * walkSpeed * dt;
           playerGroup.position.z += nz * walkSpeed * dt;
           playerGroup.rotation.y = playerHeading;
+          walkPhase += dt * walkSpeed * 2.1;
+          animateHumanWalk(playerRig, walkPhase, input.boost ? 1.0 : 0.75);
+        } else {
+          animateHumanWalk(playerRig, 0, 0);
         }
         const gY = Math.max(0.05, getGroundHeight(playerGroup.position.x, playerGroup.position.z));
         playerGroup.position.y = gY;
