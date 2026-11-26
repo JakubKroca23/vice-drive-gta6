@@ -20,6 +20,7 @@ export interface VehicleSystem {
   update: (
     dt: number,
     input: InputState,
+    camDir: THREE.Vector3,
     onWaterSplash: (x: number, z: number, strength: number) => void
   ) => void;
   getTargetPosition: () => THREE.Vector3;
@@ -108,7 +109,7 @@ export function createVehicleSystem(
   let inWaterPrev = false;
 
   const tmpQuat = new THREE.Quaternion();
-  const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  const tmpFwd = new THREE.Vector3();
 
   function respawn() {
     chassisBody.setTranslation({ x: 0, y: 1.0, z: 42 }, true);
@@ -158,10 +159,10 @@ export function createVehicleSystem(
     getHeadingRad() {
       if (onFoot) return playerHeading;
       tmpQuat.copy(carGroup.quaternion);
-      tmpEuler.setFromQuaternion(tmpQuat, 'YXZ');
-      return tmpEuler.y;
+      tmpFwd.set(0, 0, 1).applyQuaternion(tmpQuat);
+      return Math.atan2(tmpFwd.x, tmpFwd.z);
     },
-    update(dt: number, input: InputState, onWaterSplash: (x: number, z: number, strength: number) => void) {
+    update(dt: number, input: InputState, camDir: THREE.Vector3, onWaterSplash: (x: number, z: number, strength: number) => void) {
       const cPos = chassisBody.translation();
       const cRot = chassisBody.rotation();
       const cVel = chassisBody.linvel();
@@ -169,7 +170,7 @@ export function createVehicleSystem(
       speedKmh = Math.round(Math.hypot(cVel.x, cVel.z) * 3.6);
 
       if (!onFoot) {
-        const throttle = Math.abs(input.joyY) > 0.08 ? input.joyY : input.throttle;
+        const throttle = input.throttle !== 0 ? input.throttle : (Math.abs(input.joyY) > 0.14 ? input.joyY : 0);
         const rawSteer = Math.abs(input.joyX) > 0.08 ? -input.joyX : input.steer;
 
         // Speed-sensitive steering curve for crisp high-speed control
@@ -184,14 +185,20 @@ export function createVehicleSystem(
           boostCharge = Math.min(100, boostCharge + dt * 11);
         }
 
-        const enginePower = useBoost ? 7800 : 4600;
-        const driveForce = throttle > 0.02
-          ? throttle * enginePower
-          : throttle < -0.02
-            ? (fwdSpeed > 2.5 ? 0 : throttle * 3200)
-            : 0;
+        const braking =
+          (throttle < -0.05 && fwdSpeed > 2.5) ||
+          (throttle > 0.05 && fwdSpeed < -2.5) ||
+          input.handbrake;
 
-        const braking = (throttle < -0.05 && fwdSpeed > 2.5) || input.handbrake;
+        const enginePower = useBoost ? 7800 : 4600;
+        const driveForce = braking
+          ? 0
+          : throttle > 0.02
+            ? throttle * enginePower
+            : throttle < -0.02
+              ? throttle * 3200
+              : 0;
+
         tailMat.emissiveIntensity = braking ? 6.5 : 2.0;
 
         // Rear-wheel drive + Handbrake Drift physics
@@ -202,7 +209,7 @@ export function createVehicleSystem(
         controller.setWheelEngineForce(0, useBoost ? driveForce * 0.45 : 0);
         controller.setWheelEngineForce(1, useBoost ? driveForce * 0.45 : 0);
 
-        const brakeForce = input.handbrake ? 140 : (throttle < -0.05 && fwdSpeed > 2.5 ? 110 : 0);
+        const brakeForce = input.handbrake ? 140 : (braking ? 115 : 0);
         controller.setWheelBrake(0, input.handbrake ? 0 : brakeForce);
         controller.setWheelBrake(1, input.handbrake ? 0 : brakeForce);
         controller.setWheelBrake(2, brakeForce);
@@ -249,8 +256,18 @@ export function createVehicleSystem(
         controller.setWheelBrake(3, 60);
         flames.forEach((f) => { f.visible = false; });
 
-        const moveX = Math.abs(input.joyX) > 0.08 ? input.joyX : -input.steer;
-        const moveZ = Math.abs(input.joyY) > 0.08 ? input.joyY : input.throttle;
+        // Camera-relative on-foot movement (W / Up walks into camera look direction)
+        const fwdIn = Math.abs(input.joyY) > 0.08 ? input.joyY : input.throttle;
+        const rightIn = Math.abs(input.joyX) > 0.08 ? input.joyX : -input.steer;
+
+        const camLen = Math.hypot(camDir.x, camDir.z) || 1;
+        const camFwdX = camDir.x / camLen;
+        const camFwdZ = camDir.z / camLen;
+        const camRightX = -camFwdZ;
+        const camRightZ = camFwdX;
+
+        const moveX = camFwdX * fwdIn + camRightX * rightIn;
+        const moveZ = camFwdZ * fwdIn + camRightZ * rightIn;
         const len = Math.hypot(moveX, moveZ);
         if (len > 0.05) {
           const walkSpeed = input.boost ? 9.5 : 5.2;

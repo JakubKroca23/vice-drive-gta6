@@ -163,6 +163,7 @@ async function bootstrap() {
 
   const clock = new THREE.Clock();
   const desiredCamPos = new THREE.Vector3();
+  const camDir = new THREE.Vector3();
   const prevTarget = new THREE.Vector3().copy(vehicle.getTargetPosition());
   let frames = 0;
   let fpsAcc = 0;
@@ -178,7 +179,8 @@ async function bootstrap() {
     const dt = Math.min(clock.getDelta(), 0.05);
     const elapsed = clock.getElapsedTime();
 
-    vehicle.update(dt, input, onSplash);
+    camera.getWorldDirection(camDir);
+    vehicle.update(dt, input, camDir, onSplash);
     pedestrians.update(dt, vehicle.carGroup.position, vehicle.speedKmh / 3.6);
     physics.step(dt, onSplash);
     audio.updateVehicle(vehicle.speedKmh / 3.6, input.throttle, input.boost, vehicle.drifting, !vehicle.onFoot);
